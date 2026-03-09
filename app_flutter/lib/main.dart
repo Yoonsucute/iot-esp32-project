@@ -6,11 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
 import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_server_client.dart';
-// Import cho web - chỉ load khi chạy trên web
-import 'package:mqtt_client/mqtt_browser_client.dart' if (dart.library.io) 'package:mqtt_client/mqtt_server_client.dart';
 
 import 'supabase_service.dart';
+
+// Conditional import - tự động chọn implementation phù hợp
+import 'mqtt_client_factory.dart'
+    if (dart.library.html) 'mqtt_client_factory_web.dart'
+    if (dart.library.io) 'mqtt_client_factory_mobile.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -84,7 +86,7 @@ class _IotControllerPageState extends State<IotControllerPage> {
           'disable_web_page_preview': true,
         },
         options: Options(
-          contentType: Headers.formUrlEncodedContentType,
+          contentType: 'application/x-www-form-urlencoded',
           sendTimeout: const Duration(seconds: 8),
           receiveTimeout: const Duration(seconds: 8),
         ),
@@ -160,19 +162,8 @@ class _IotControllerPageState extends State<IotControllerPage> {
       _sub?.cancel();
       client?.disconnect();
 
-      if (kIsWeb) {
-        // ✅ WebSocket cho web
-        final wsUrl = 'wss://$broker:8084/mqtt';
-        final c = MqttBrowserClient(wsUrl, clientId);
-        c.port = 8084;
-        c.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
-        client = c;
-      } else {
-        // ✅ TCP cho Android/iOS
-        final c = MqttServerClient.withPort(broker, clientId, 1883);
-        c.secure = false;
-        client = c;
-      }
+      // ✅ Tự động chọn client phù hợp: Web = WebSocket, Mobile = TCP
+      client = createMqttClient(broker, clientId);
 
       client!
         ..keepAlivePeriod = 30
@@ -348,11 +339,13 @@ class _IotControllerPageState extends State<IotControllerPage> {
             data.containsKey("light") ? parseOn(data["light"]) : lightOn;
         final newFan = data.containsKey("fan") ? parseOn(data["fan"]) : fanOn;
 
-        if (mounted) {
+        // ✅ Chỉ cập nhật nếu có thay đổi (tránh loop)
+        if (mounted && (newLight != lightOn || newFan != fanOn)) {
           setState(() {
             lightOn = newLight;
             fanOn = newFan;
           });
+          debugPrint('🔄 Đồng bộ từ MQTT: Đèn=${lightOn ? "BẬT" : "TẮT"}, Quạt=${fanOn ? "BẬT" : "TẮT"}');
         }
       }
     });
@@ -390,6 +383,9 @@ class _IotControllerPageState extends State<IotControllerPage> {
       return;
     }
 
+    // ✅ Publish trạng thái lên MQTT để đồng bộ với các client khác
+    _publishDeviceState('light', v);
+
     // Lưu trạng thái đèn lên Supabase
     try {
       await SupabaseService.saveDeviceState(
@@ -422,6 +418,9 @@ class _IotControllerPageState extends State<IotControllerPage> {
       return;
     }
 
+    // ✅ Publish trạng thái lên MQTT để đồng bộ với các client khác
+    _publishDeviceState('fan', v);
+
     // Lưu trạng thái quạt lên Supabase
     try {
       await SupabaseService.saveDeviceState(
@@ -442,6 +441,23 @@ class _IotControllerPageState extends State<IotControllerPage> {
 <b>📍 Thiết bị:</b> ESP32 SmartHome
 """,
     );
+  }
+
+  // ✅ Publish trạng thái thiết bị lên MQTT để đồng bộ realtime
+  void _publishDeviceState(String device, bool state) {
+    if (!connected || client == null) return;
+
+    try {
+      final msg = jsonEncode({
+        device: state,
+        'source': 'flutter_app', // Đánh dấu từ app/web
+      });
+      final b = MqttClientPayloadBuilder()..addString(msg);
+      client!.publishMessage(topicState, MqttQos.atMostOnce, b.payload!);
+      debugPrint("📤 Published state: $msg");
+    } catch (e) {
+      debugPrint("❌ Publish state error: $e");
+    }
   }
 
   void _startTimerCheck() {

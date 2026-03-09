@@ -143,4 +143,21 @@ class SupabaseService {
       return [];
     }
   }
+
+  // ✅ Lấy trạng thái mới nhất của từng thiết bị (để đồng bộ)
+  static Future<List<Map<String, dynamic>>> getLatestDeviceStates() async {
+    try {
+      // Lấy 2 record mới nhất (1 cho light, 1 cho fan)
+      final response = await _dio.get('/device_states', queryParameters: {
+        'order': 'created_at.desc',
+        'limit': 2,
+      });
+      
+      final List<dynamic> data = response.data;
+      return data.map((e) => e as Map<String, dynamic>).toList();
+    } catch (e) {
+      debugPrint('❌ Error fetching latest device states: $e');
+      return [];
+    }
+  }
 }
