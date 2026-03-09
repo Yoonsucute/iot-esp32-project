@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 
 import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
+// Import cho web - chỉ load khi chạy trên web
+import 'package:mqtt_client/mqtt_browser_client.dart' if (dart.library.io) 'package:mqtt_client/mqtt_server_client.dart';
 
 import 'supabase_service.dart';
 
@@ -157,10 +160,19 @@ class _IotControllerPageState extends State<IotControllerPage> {
       _sub?.cancel();
       client?.disconnect();
 
-      // ✅ Chỉ dùng TCP cho Android/iOS
-      final c = MqttServerClient.withPort(broker, clientId, 1883);
-      c.secure = false;
-      client = c;
+      if (kIsWeb) {
+        // ✅ WebSocket cho web
+        final wsUrl = 'wss://$broker:8084/mqtt';
+        final c = MqttBrowserClient(wsUrl, clientId);
+        c.port = 8084;
+        c.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
+        client = c;
+      } else {
+        // ✅ TCP cho Android/iOS
+        final c = MqttServerClient.withPort(broker, clientId, 1883);
+        c.secure = false;
+        client = c;
+      }
 
       client!
         ..keepAlivePeriod = 30
@@ -550,7 +562,8 @@ class _IotControllerPageState extends State<IotControllerPage> {
                   const SizedBox(height: 2),
                   Text(ok ? "Connected" : "Disconnected", style: TextStyle(color: color)),
                   const SizedBox(height: 2),
-                  Text("TCP", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  Text(kIsWeb ? "WebSocket" : "TCP",
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                 ],
               ),
             ),
