@@ -21,10 +21,9 @@ dependencies:
 
   # ✅ Giao diện đẹp hơn (iOS style icon)
   cupertino_icons: ^1.0.6
-  http: ^1.5.0
   
-  # ✅ Supabase client
-  supabase_flutter: ^2.5.0
+  # ✅ HTTP client tương thích Android (không phụ thuộc web package)
+  dio: ^5.4.0
 
 dev_dependencies:
   flutter_test:
@@ -32,6 +31,9 @@ dev_dependencies:
 
   # ✅ Linter version mới nhất, tránh cảnh báo cũ
   flutter_lints: ^3.0.2
+
+dependency_overrides:
+  web: 1.0.0
 
 flutter:
   uses-material-design: true

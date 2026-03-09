@@ -1,19 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
 
 import 'package:mqtt_client/mqtt_client.dart';
-import 'package:mqtt_client/mqtt_browser_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 
 import 'supabase_service.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await SupabaseService.initialize();
+  SupabaseService.initialize();
   runApp(const MyApp());
 }
 
@@ -44,6 +42,8 @@ class _IotControllerPageState extends State<IotControllerPage> {
   static const Duration tgCooldown = Duration(seconds: 20);
   DateTime? _lastTgSentAt;
   String _lastTgKey = "";
+  
+  final Dio _dio = Dio();
 
   bool _tgConfigured() =>
       !tgBotToken.contains("PUT_") && !tgChatId.contains("PUT_");
@@ -71,27 +71,23 @@ class _IotControllerPageState extends State<IotControllerPage> {
       return;
     }
 
-    final uri = Uri.https(
-      'api.telegram.org',
-      '/bot$tgBotToken/sendMessage',
-    );
-
     try {
-      // ✅ dùng POST ổn định hơn GET
-      final res = await http
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: {
-              'chat_id': tgChatId,
-              'text': htmlText,
-              'parse_mode': 'HTML',
-              'disable_web_page_preview': 'true',
-            },
-          )
-          .timeout(const Duration(seconds: 8));
+      final res = await _dio.post(
+        'https://api.telegram.org/bot$tgBotToken/sendMessage',
+        data: {
+          'chat_id': tgChatId,
+          'text': htmlText,
+          'parse_mode': 'HTML',
+          'disable_web_page_preview': true,
+        },
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          sendTimeout: const Duration(seconds: 8),
+          receiveTimeout: const Duration(seconds: 8),
+        ),
+      );
 
-      debugPrint("📨 Telegram status=${res.statusCode} body=${res.body}");
+      debugPrint("📨 Telegram status=${res.statusCode} body=${res.data}");
 
       if (res.statusCode == 200) {
         _lastTgSentAt = now;
@@ -161,17 +157,10 @@ class _IotControllerPageState extends State<IotControllerPage> {
       _sub?.cancel();
       client?.disconnect();
 
-      if (kIsWeb) {
-        final wsUrl = 'wss://$broker:8084/mqtt';
-        final c = MqttBrowserClient(wsUrl, clientId);
-        c.port = 8084;
-        c.websocketProtocols = MqttClientConstants.protocolsSingleDefault;
-        client = c;
-      } else {
-        final c = MqttServerClient.withPort(broker, clientId, 1883);
-        c.secure = false;
-        client = c;
-      }
+      // ✅ Chỉ dùng TCP cho Android/iOS
+      final c = MqttServerClient.withPort(broker, clientId, 1883);
+      c.secure = false;
+      client = c;
 
       client!
         ..keepAlivePeriod = 30
@@ -561,8 +550,7 @@ class _IotControllerPageState extends State<IotControllerPage> {
                   const SizedBox(height: 2),
                   Text(ok ? "Connected" : "Disconnected", style: TextStyle(color: color)),
                   const SizedBox(height: 2),
-                  Text(kIsWeb ? "WebSocket" : "TCP",
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                  Text("TCP", style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                 ],
               ),
             ),

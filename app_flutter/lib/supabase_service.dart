@@ -1,25 +1,28 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:dio/dio.dart';
 
 class SupabaseService {
   static const String supabaseUrl = 'https://pzzxyobutvlbmwjtnqpm.supabase.co';
   static const String supabaseAnonKey = 
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6enh5b2J1dHZsYm13anRucXBtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMwMjAzNTcsImV4cCI6MjA4ODU5NjM1N30.7CeL1DLn8TAKCNm5hophcYGmv8ufDTKcN5q1SRjcViw';
 
-  static Future<void> initialize() async {
-    try {
-      await Supabase.initialize(
-        url: supabaseUrl,
-        anonKey: supabaseAnonKey,
-      );
-      debugPrint('✅ Supabase initialized successfully');
-      debugPrint('✅ URL: $supabaseUrl');
-    } catch (e) {
-      debugPrint('❌ Supabase initialization failed: $e');
-    }
-  }
+  static late Dio _dio;
 
-  static SupabaseClient get client => Supabase.instance.client;
+  static void initialize() {
+    _dio = Dio(BaseOptions(
+      baseUrl: '$supabaseUrl/rest/v1',
+      headers: {
+        'apikey': supabaseAnonKey,
+        'Authorization': 'Bearer $supabaseAnonKey',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=representation',
+      },
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 10),
+    ));
+    debugPrint('✅ Supabase REST API ready');
+    debugPrint('✅ URL: $supabaseUrl');
+  }
 
   // Lưu dữ liệu DHT22 (nhiệt độ, độ ẩm)
   static Future<bool> saveDhtData({
@@ -29,12 +32,12 @@ class SupabaseService {
     try {
       debugPrint('🔄 Đang lưu DHT: temp=$temperature, hum=$humidity');
       
-      final response = await client.from('dht_data').insert({
+      final response = await _dio.post('/dht_data', data: {
         'temperature': temperature,
         'humidity': humidity,
-      }).select();
+      });
       
-      debugPrint('✅ DHT data saved: $response');
+      debugPrint('✅ DHT data saved: ${response.data}');
       return true;
     } catch (e, stackTrace) {
       debugPrint('❌ Error saving DHT data: $e');
@@ -52,13 +55,13 @@ class SupabaseService {
     try {
       debugPrint('🔄 Đang lưu Gas: mqAo=$mqAo, threshold=$threshold, alarm=$gasAlarm');
       
-      final response = await client.from('gas_data').insert({
+      final response = await _dio.post('/gas_data', data: {
         'mq_ao': mqAo,
         'threshold': threshold,
         'gas_alarm': gasAlarm,
-      }).select();
+      });
       
-      debugPrint('✅ Gas data saved: $response');
+      debugPrint('✅ Gas data saved: ${response.data}');
       return true;
     } catch (e, stackTrace) {
       debugPrint('❌ Error saving gas data: $e');
@@ -75,13 +78,13 @@ class SupabaseService {
     try {
       debugPrint('🔄 Đang lưu $deviceName = ${state ? "BẬT" : "TẮT"}...');
       
-      final response = await client.from('device_states').insert({
+      final response = await _dio.post('/device_states', data: {
         'device_name': deviceName,
         'state': state,
-      }).select();
+      });
       
       debugPrint('✅ Đã lưu Supabase thành công: $deviceName = ${state ? "BẬT" : "TẮT"}');
-      debugPrint('📊 Response: $response');
+      debugPrint('📊 Response: ${response.data}');
       return true;
     } catch (e, stackTrace) {
       debugPrint('❌ LỖI LƯU SUPABASE:');
@@ -96,12 +99,13 @@ class SupabaseService {
   // Lấy lịch sử dữ liệu DHT22
   static Future<List<Map<String, dynamic>>> getDhtHistory({int limit = 50}) async {
     try {
-      final response = await client
-          .from('dht_data')
-          .select()
-          .order('created_at', ascending: false)
-          .limit(limit);
-      return List<Map<String, dynamic>>.from(response);
+      final response = await _dio.get('/dht_data', queryParameters: {
+        'order': 'created_at.desc',
+        'limit': limit,
+      });
+      
+      final List<dynamic> data = response.data;
+      return data.map((e) => e as Map<String, dynamic>).toList();
     } catch (e) {
       debugPrint('❌ Error fetching DHT history: $e');
       return [];
@@ -111,12 +115,13 @@ class SupabaseService {
   // Lấy lịch sử dữ liệu gas
   static Future<List<Map<String, dynamic>>> getGasHistory({int limit = 50}) async {
     try {
-      final response = await client
-          .from('gas_data')
-          .select()
-          .order('created_at', ascending: false)
-          .limit(limit);
-      return List<Map<String, dynamic>>.from(response);
+      final response = await _dio.get('/gas_data', queryParameters: {
+        'order': 'created_at.desc',
+        'limit': limit,
+      });
+      
+      final List<dynamic> data = response.data;
+      return data.map((e) => e as Map<String, dynamic>).toList();
     } catch (e) {
       debugPrint('❌ Error fetching gas history: $e');
       return [];
@@ -126,12 +131,13 @@ class SupabaseService {
   // Lấy lịch sử trạng thái thiết bị
   static Future<List<Map<String, dynamic>>> getDeviceHistory({int limit = 50}) async {
     try {
-      final response = await client
-          .from('device_states')
-          .select()
-          .order('created_at', ascending: false)
-          .limit(limit);
-      return List<Map<String, dynamic>>.from(response);
+      final response = await _dio.get('/device_states', queryParameters: {
+        'order': 'created_at.desc',
+        'limit': limit,
+      });
+      
+      final List<dynamic> data = response.data;
+      return data.map((e) => e as Map<String, dynamic>).toList();
     } catch (e) {
       debugPrint('❌ Error fetching device history: $e');
       return [];
