@@ -9,7 +9,13 @@ import 'package:mqtt_client/mqtt_client.dart';
 import 'package:mqtt_client/mqtt_browser_client.dart';
 import 'package:mqtt_client/mqtt_server_client.dart';
 
-void main() => runApp(const MyApp());
+import 'supabase_service.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SupabaseService.initialize();
+  runApp(const MyApp());
+}
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -263,6 +269,18 @@ class _IotControllerPageState extends State<IotControllerPage> {
           temp = (t is num) ? "${t.toStringAsFixed(1)} °C" : "--";
           hum = (h is num) ? "${h.toStringAsFixed(0)} %" : "--";
         });
+
+        // Lưu dữ liệu DHT lên Supabase
+        if (t is num && h is num) {
+          try {
+            await SupabaseService.saveDhtData(
+              temperature: t.toDouble(),
+              humidity: h.toDouble(),
+            );
+          } catch (e) {
+            debugPrint('❌ Lỗi lưu DHT lên Supabase: $e');
+          }
+        }
       }
 
       // ✅ MQ: ESP32 bạn đang gửi {mq_ao, threshold, gas_alarm}
@@ -282,6 +300,19 @@ class _IotControllerPageState extends State<IotControllerPage> {
           mqTh = th?.toString() ?? "--";
           gasText = isAlarm ? "ALARM" : "NORMAL";
         });
+
+        // Lưu dữ liệu gas lên Supabase
+        if (ao != null && th != null) {
+          try {
+            await SupabaseService.saveGasData(
+              mqAo: ao,
+              threshold: th,
+              gasAlarm: isAlarm,
+            );
+          } catch (e) {
+            debugPrint('❌ Lỗi lưu gas lên Supabase: $e');
+          }
+        }
 
         // ✅ Telegram gas alert (NORMAL -> ALARM gửi 1 lần)
         if (isAlarm && !_gasAlarmLatched) {
@@ -358,6 +389,16 @@ class _IotControllerPageState extends State<IotControllerPage> {
       return;
     }
 
+    // Lưu trạng thái đèn lên Supabase
+    try {
+      await SupabaseService.saveDeviceState(
+        deviceName: 'light',
+        state: v,
+      );
+    } catch (e) {
+      debugPrint('❌ Lỗi lưu đèn lên Supabase: $e');
+    }
+
     final now = DateTime.now();
     await sendTelegram(
       key: v ? "light_on" : "light_off",
@@ -378,6 +419,16 @@ class _IotControllerPageState extends State<IotControllerPage> {
     if (!ok) {
       setState(() => fanOn = prev);
       return;
+    }
+
+    // Lưu trạng thái quạt lên Supabase
+    try {
+      await SupabaseService.saveDeviceState(
+        deviceName: 'fan',
+        state: v,
+      );
+    } catch (e) {
+      debugPrint('❌ Lỗi lưu quạt lên Supabase: $e');
     }
 
     final now = DateTime.now();
